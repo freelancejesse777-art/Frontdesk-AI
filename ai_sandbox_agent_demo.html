@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Sandbox Agent — Write, Run, Fix Loop</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#0d0f14;
+    --panel:#14171d;
+    --panel-2:#1a1e26;
+    --line:#262b34;
+    --text:#e4e7ec;
+    --muted:#6b7280;
+    --accent:#5b8cff;
+    --accent-dim:#26365c;
+    --good:#4ade80;
+    --bad:#f87171;
+    --warn:#facc15;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:28px 16px 60px;}
+  .wrap{max-width:1180px;margin:0 auto;}
+
+  .topbar{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:1px solid var(--line);padding-bottom:18px;margin-bottom:22px;flex-wrap:wrap;gap:12px;}
+  .eyebrow{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:6px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:26px;margin:0;letter-spacing:-0.01em;}
+  .sub{color:var(--muted);font-size:13px;margin-top:6px;max-width:520px;line-height:1.5;}
+  .status-chip{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;padding:6px 10px;border-radius:4px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;}
+
+  .task-row{display:flex;gap:10px;margin-bottom:18px;}
+  .task-row input{
+    flex:1;background:var(--panel);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;padding:14px 16px;font-family:'Inter',sans-serif;font-size:14px;
+  }
+  .task-row input:focus{outline:none;border-color:var(--accent);}
+  .task-row button{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:13px;border:none;border-radius:8px;
+    padding:0 22px;cursor:pointer;background:var(--accent);color:#050810;
+  }
+  .task-row button:disabled{opacity:.4;cursor:not-allowed;}
+  .examples{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:22px;}
+  .example-chip{
+    font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);
+    border:1px solid var(--line);border-radius:20px;padding:6px 12px;cursor:pointer;
+    transition:border-color .15s ease, color .15s ease;
+  }
+  .example-chip:hover{border-color:var(--accent);color:var(--text);}
+
+  .grid{display:grid;grid-template-columns:1fr 1.3fr;gap:16px;}
+  @media (max-width:900px){.grid{grid-template-columns:1fr;}}
+
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;}
+  .panel-head{padding:12px 16px;border-bottom:1px solid var(--line);background:var(--panel-2);display:flex;align-items:center;justify-content:space-between;}
+  .panel-title{font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);}
+
+  /* AGENT LOG */
+  .agent-log{padding:16px;overflow-y:auto;max-height:560px;display:flex;flex-direction:column;gap:12px;}
+  .placeholder{color:var(--muted);font-size:13px;margin:auto;text-align:center;max-width:260px;line-height:1.6;padding:40px 0;}
+  .step{border-left:2px solid var(--line);padding-left:12px;position:relative;}
+  .step::before{content:"";position:absolute;left:-5px;top:2px;width:8px;height:8px;border-radius:50%;background:var(--line);}
+  .step.active::before{background:var(--accent);animation:pulse 1.2s infinite;}
+  .step.pass::before{background:var(--good);}
+  .step.fail::before{background:var(--bad);}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .step-label{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+  .step-body{font-size:13px;line-height:1.55;color:var(--text);}
+  .step-body.mono{font-family:'JetBrains Mono',monospace;font-size:12px;white-space:pre-wrap;}
+
+  /* CODE + OUTPUT */
+  .code-wrap{display:flex;flex-direction:column;}
+  .code-area{
+    background:#0a0c10;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;
+    padding:16px;overflow:auto;max-height:320px;white-space:pre;color:#c9d1d9;
+  }
+  .code-area .attempt-tag{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.08em;display:block;margin-bottom:8px;}
+  .console{background:#0a0c10;font-family:'JetBrains Mono',monospace;font-size:12.5px;line-height:1.6;padding:16px;min-height:130px;max-height:200px;overflow-y:auto;border-top:1px solid var(--line);}
+  .console-line{margin-bottom:4px;}
+  .console-line.err{color:var(--bad);}
+  .console-line.ok{color:var(--good);}
+  .console-line.log{color:#c9d1d9;}
+  .console-empty{color:var(--muted);}
+
+  .attempt-badges{display:flex;gap:6px;}
+  .badge{font-family:'JetBrains Mono',monospace;font-size:10px;padding:3px 8px;border-radius:4px;border:1px solid var(--line);color:var(--muted);}
+  .badge.pass{border-color:var(--good);color:var(--good);}
+  .badge.fail{border-color:var(--bad);color:var(--bad);}
+  .badge.active{border-color:var(--accent);color:var(--accent);}
+
+  #sandboxFrame{display:none;}
+  footer{margin-top:22px;font-size:12px;color:var(--muted);text-align:center;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <div class="eyebrow">Sandbox Agent — MVP demo</div>
+      <h1>Write it. Run it. Fix it. All the agent.</h1>
+      <div class="sub">Describe a task. The agent writes JavaScript, executes it in an isolated sandbox with zero access to this page or your machine, and self-corrects if it errors.</div>
+    </div>
+    <div class="status-chip" id="apiStatus">checking connection…</div>
+  </div>
+
+  <div class="task-row">
+    <input type="text" id="taskInput" placeholder="e.g. 'sort this list of names alphabetically and print it' or 'write a function that checks if a number is prime'" />
+    <button id="runBtn">Run agent</button>
+  </div>
+  <div class="examples">
+    <div class="example-chip" data-task="calculate the fibonacci sequence up to the 12th number and print it">fibonacci to 12th</div>
+    <div class="example-chip" data-task="parse this messy string of comma separated numbers with extra spaces and print the sum: '  4, 8 ,15,16 , 23,42 '">parse &amp; sum messy string</div>
+    <div class="example-chip" data-task="write a function that reverses each word in a sentence but keeps word order, then run it on 'the quick brown fox'">reverse each word</div>
+    <div class="example-chip" data-task="intentionally trigger a runtime error on the first attempt (like calling a method on undefined), then show the agent catching and fixing it">force an error + self-fix</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <div class="panel-head"><div class="panel-title">Agent reasoning</div></div>
+      <div class="agent-log" id="agentLog">
+        <div class="placeholder">Describe a task above and press "Run agent." You'll see it plan, write code, execute, and fix errors in real time — right here.</div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div class="panel-title">Sandbox — isolated execution</div>
+        <div class="attempt-badges" id="attemptBadges"></div>
+      </div>
+      <div class="code-wrap">
+        <div class="code-area" id="codeArea"><span class="attempt-tag">no code yet</span>// generated code will appear here</div>
+        <div class="console" id="consoleOut"><div class="console-line console-empty">// sandbox output will appear here</div></div>
+      </div>
+    </div>
+  </div>
+
+  <footer>
+    Sandbox = a scriptable, sandboxed iframe with no access to cookies, the parent page, or your machine — same isolation model production agent sandboxes are built on before any real-world permissions are layered in.
+  </footer>
+</div>
+
+<iframe id="sandboxFrame" sandbox="allow-scripts"></iframe>
+
+<script>
+const el = id => document.getElementById(id);
+const agentLog = el('agentLog');
+const codeArea = el('codeArea');
+const consoleOut = el('consoleOut');
+const runBtn = el('runBtn');
+const taskInput = el('taskInput');
+const attemptBadges = el('attemptBadges');
+const apiStatus = el('apiStatus');
+const sandboxFrame = el('sandboxFrame');
+
+const MAX_ATTEMPTS = 3;
+
+document.querySelectorAll('.example-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{ taskInput.value = chip.dataset.task; });
+});
+
+function clearLog(){
+  agentLog.innerHTML = '';
+}
+function addStep(label, body, cls, mono){
+  const step = document.createElement('div');
+  step.className = 'step ' + (cls||'');
+  const lab = document.createElement('div');
+  lab.className = 'step-label';
+  lab.textContent = label;
+  const b = document.createElement('div');
+  b.className = 'step-body' + (mono ? ' mono' : '');
+  b.textContent = body;
+  step.appendChild(lab); step.appendChild(b);
+  agentLog.appendChild(step);
+  agentLog.scrollTop = agentLog.scrollHeight;
+  return step;
+}
+function setActive(step){ step.classList.add('active'); }
+function settle(step, cls){ step.classList.remove('active'); step.classList.add(cls); }
+
+function showCode(code, attemptNum){
+  codeArea.innerHTML = '';
+  const tag = document.createElement('span');
+  tag.className = 'attempt-tag';
+  tag.textContent = 'attempt ' + attemptNum;
+  codeArea.appendChild(tag);
+  codeArea.appendChild(document.createTextNode(code));
+}
+
+function renderBadges(results){
+  attemptBadges.innerHTML = '';
+  results.forEach((r,i)=>{
+    const b = document.createElement('div');
+    b.className = 'badge ' + (r==='active' ? 'active' : r==='pass' ? 'pass' : r==='fail' ? 'fail' : '');
+    b.textContent = 'attempt ' + (i+1);
+    attemptBadges.appendChild(b);
+  });
+}
+
+function clearConsole(){ consoleOut.innerHTML = ''; }
+function consoleLine(text, cls){
+  const line = document.createElement('div');
+  line.className = 'console-line ' + (cls||'log');
+  line.textContent = text;
+  consoleOut.appendChild(line);
+  consoleOut.scrollTop = consoleOut.scrollHeight;
+}
+
+// Runs code inside the sandboxed iframe and resolves with {ok, logs, error}
+function runInSandbox(code){
+  return new Promise((resolve)=>{
+    const listener = (event)=>{
+      if(!event.data || event.data.__sandboxResult === undefined) return;
+      window.removeEventListener('message', listener);
+      resolve(event.data.__sandboxResult);
+    };
+    window.addEventListener('message', listener);
+
+    const doc = `
+      <script>
+        const logs = [];
+        const send = (result) => { try { parent.postMessage({__sandboxResult: result}, '*'); } catch(e){} };
+        console.log = (...args) => logs.push(args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' '));
+        try {
+          ${code}
+          send({ ok: true, logs, error: null });
+        } catch (err) {
+          send({ ok: false, logs, error: String(err && err.message ? err.message : err) });
+        }
+      <\/script>
+    `;
+    sandboxFrame.srcdoc = doc;
+
+    setTimeout(()=>{
+      window.removeEventListener('message', listener);
+      resolve({ ok:false, logs:[], error:'Execution timed out.' });
+    }, 4000);
+  });
+}
+
+async function callClaude(messages, system){
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({ model:'claude-sonnet-4-6', max_tokens:1200, system, messages })
+  });
+  const data = await res.json();
+  const raw = (data.content || []).map(b=>b.text||'').join('').trim();
+  const clean = raw.replace(/^```json/,'').replace(/^```/,'').replace(/```$/,'').trim();
+  return JSON.parse(clean);
+}
+
+const CODE_SYSTEM = `You are a coding agent working inside a sandbox demo. Given a task, write a short, self-contained JavaScript snippet that accomplishes it and calls console.log to print the result. The snippet runs directly inside a script tag — do not wrap it in a function unless needed, do not use imports, do not use async/await unless truly necessary, and never reference the DOM or browser APIs.
+
+If the user's task explicitly asks you to demonstrate an error and then fix it, and this is attempt 1, deliberately write code that throws a runtime error (like calling a method on undefined) so the failure can be shown, and DO NOT fix it yet. On later attempts, or for any normal task, write correct working code.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"plan": "<one short sentence describing your approach>", "code": "<the javascript code as a single string, using \\n for newlines>"}`;
+
+const FIX_SYSTEM = `You are a coding agent debugging your own code inside a sandbox demo. You previously wrote JavaScript that failed. You are given the original task, your previous code, and the error message. Fix the code so it runs correctly and prints the result via console.log. Keep it self-contained: no DOM, no imports.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"plan": "<one short sentence describing what you're fixing>", "code": "<the corrected javascript code as a single string, using \\n for newlines>"}`;
+
+async function runAgent(){
+  const task = taskInput.value.trim();
+  if(!task) return;
+  runBtn.disabled = true;
+  clearLog();
+  clearConsole();
+  showCode('', 0);
+  const badgeStates = [];
+  renderBadges(badgeStates);
+
+  const planStep = addStep('Task received', task, 'active');
+
+  let code = null, plan = null;
+  let lastError = null;
+  let success = false;
+
+  for(let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++){
+    badgeStates[attempt-1] = 'active';
+    renderBadges(badgeStates);
+
+    const writeStep = addStep(attempt===1 ? 'Writing code' : `Revising code (attempt ${attempt})`, 'Calling the model…', 'active', false);
+    let parsed;
+    try{
+      if(attempt === 1){
+        parsed = await callClaude([{role:'user', content: task}], CODE_SYSTEM);
+      } else {
+        const fixPrompt = `Task: ${task}\n\nPrevious code:\n${code}\n\nError when run:\n${lastError}\n\nFix it.`;
+        parsed = await callClaude([{role:'user', content: fixPrompt}], FIX_SYSTEM);
+      }
+    } catch(e){
+      writeStep.querySelector('.step-body').textContent = 'Connection issue calling the model.';
+      settle(writeStep, 'fail');
+      break;
+    }
+    code = parsed.code;
+    plan = parsed.plan;
+    writeStep.querySelector('.step-body').textContent = plan;
+    settle(writeStep, 'pass');
+
+    showCode(code, attempt);
+
+    const execStep = addStep('Executing in sandbox', 'Running in an isolated iframe with no page or filesystem access…', 'active');
+    const result = await runInSandbox(code);
+    clearConsole();
+    if(result.logs && result.logs.length){
+      result.logs.forEach(l => consoleLine(l, 'log'));
+    }
+    if(result.ok){
+      consoleLine('✓ finished with no errors', 'ok');
+      execStep.querySelector('.step-body').textContent = 'Ran successfully, no errors.';
+      settle(execStep, 'pass');
+      badgeStates[attempt-1] = 'pass';
+      renderBadges(badgeStates);
+      success = true;
+      break;
+    } else {
+      lastError = result.error;
+      consoleLine('✗ ' + result.error, 'err');
+      execStep.querySelector('.step-body').textContent = 'Error: ' + result.error;
+      settle(execStep, 'fail');
+      badgeStates[attempt-1] = 'fail';
+      renderBadges(badgeStates);
+    }
+  }
+
+  if(success){
+    addStep('Done', 'Task complete. Output shown above.', 'pass');
+  } else {
+    addStep('Stopped', `Gave up after ${MAX_ATTEMPTS} attempts — would escalate to a human in a production system.`, 'fail');
+  }
+  runBtn.disabled = false;
+}
+
+runBtn.addEventListener('click', runAgent);
+taskInput.addEventListener('keydown', e=>{ if(e.key==='Enter') runAgent(); });
+
+(async ()=>{
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:10, messages:[{role:'user',content:'hi'}]})
+    });
+    apiStatus.textContent = res.ok ? 'agent ready' : 'connection issue';
+    apiStatus.style.color = res.ok ? '#4ade80' : '#f87171';
+  }catch(e){
+    apiStatus.textContent = 'connection issue';
+    apiStatus.style.color = '#f87171';
+  }
+})();
+</script>
+</body>
+</html>

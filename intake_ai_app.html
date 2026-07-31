@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Intake AI — Voice Booking Agent</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&family=Inter:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+
+  :root{
+    --bg:#12181f;
+    --panel:#1a222c;
+    --panel-2:#212b37;
+    --line:#2c3846;
+    --text:#e8ecf1;
+    --muted:#8a96a3;
+    --accent:#ffb020;
+    --accent-dim:#8a651c;
+    --live:#3ddc84;
+    --ring:#ff5a5f;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',sans-serif;min-height:100vh;padding:20px 14px 50px;}
+  .wrap{max-width:1000px;margin:0 auto;}
+
+  .topbar{display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid var(--line);padding-bottom:16px;margin-bottom:18px;flex-wrap:wrap;gap:12px;}
+  .brand-eyebrow{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--accent);margin-bottom:5px;}
+  h1{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:clamp(20px,5vw,28px);margin:0;letter-spacing:-0.01em;}
+  .sub{color:var(--muted);font-size:12.5px;margin-top:5px;max-width:460px;line-height:1.5;}
+  .status-chip{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.06em;text-transform:uppercase;padding:5px 9px;border-radius:4px;border:1px solid var(--line);color:var(--muted);white-space:nowrap;}
+
+  .vertical-picker{display:flex;gap:8px;margin-bottom:18px;flex-wrap:wrap;}
+  .v-btn{
+    font-family:'Inter',sans-serif;font-weight:600;font-size:12.5px;
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    border-radius:20px;padding:9px 16px;cursor:pointer;transition:all .15s ease;
+    display:flex;align-items:center;gap:6px;
+  }
+  .v-btn.active{background:var(--accent);color:#1a1204;border-color:var(--accent);}
+  .v-btn:not(.active):hover{border-color:var(--accent);color:var(--text);}
+
+  .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
+  .tab{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+    color:var(--muted);padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;}
+  .tab.active{color:var(--accent);border-bottom-color:var(--accent);}
+
+  .grid{display:grid;grid-template-columns:1.15fr 0.85fr;gap:16px;}
+  @media (max-width:760px){ .grid{grid-template-columns:1fr;} }
+
+  .console{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;display:flex;flex-direction:column;min-height:480px;}
+  .console-head{padding:14px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;background:var(--panel-2);flex-wrap:wrap;gap:8px;}
+  .call-id{font-family:'IBM Plex Mono',monospace;font-size:11px;color:var(--muted);}
+  .call-state{display:flex;align-items:center;gap:7px;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.05em;}
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--muted);flex:none;}
+  .dot.ringing{background:var(--ring);animation:pulse 1s infinite;}
+  .dot.live{background:var(--live);animation:pulse 1.4s infinite;}
+  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:.35;}}
+  .timer{font-variant-numeric:tabular-nums;color:var(--text);}
+
+  .transcript{flex:1;padding:14px;overflow-y:auto;display:flex;flex-direction:column;gap:10px;font-size:13.5px;line-height:1.5;max-height:50vh;}
+  .placeholder{color:var(--muted);font-size:12.5px;margin:auto;text-align:center;max-width:260px;line-height:1.6;padding:30px 10px;}
+  .msg{max-width:85%;padding:9px 12px;border-radius:8px;word-wrap:break-word;}
+  .msg.agent{background:var(--panel-2);border:1px solid var(--line);align-self:flex-start;border-bottom-left-radius:2px;}
+  .msg.caller{background:var(--accent);color:#1a1204;align-self:flex-end;border-bottom-right-radius:2px;font-weight:500;}
+  .msg-label{font-family:'IBM Plex Mono',monospace;font-size:9px;letter-spacing:.1em;text-transform:uppercase;opacity:.55;margin-bottom:3px;display:block;}
+
+  .console-foot{border-top:1px solid var(--line);padding:12px 14px;background:var(--panel-2);}
+  .listening-row{display:flex;align-items:center;gap:9px;font-family:'IBM Plex Mono',monospace;font-size:11.5px;color:var(--muted);min-height:16px;margin-bottom:9px;}
+  .bars{display:flex;gap:2px;align-items:flex-end;height:13px;}
+  .bars span{width:3px;background:var(--live);border-radius:1px;animation:bar 0.9s infinite ease-in-out;}
+  .bars span:nth-child(2){animation-delay:.15s;}
+  .bars span:nth-child(3){animation-delay:.3s;}
+  .bars span:nth-child(4){animation-delay:.45s;}
+  @keyframes bar{0%,100%{height:4px;}50%{height:13px;}}
+
+  .controls{display:flex;gap:9px;}
+  button.core{font-family:'Inter',sans-serif;font-weight:600;font-size:13px;border:none;border-radius:6px;padding:13px 16px;cursor:pointer;}
+  button.core:active{transform:scale(.98);}
+  button.core:disabled{opacity:.4;cursor:not-allowed;}
+  .btn-start{background:var(--live);color:#04170c;flex:1;}
+  .btn-end{background:var(--ring);color:#2a0505;flex:1;}
+  .btn-mic{background:var(--accent);color:#1a1204;width:50px;flex:none;font-size:16px;}
+  .btn-mic.recording{background:var(--ring);color:#fff;}
+  .text-fallback{display:flex;gap:7px;margin-top:9px;}
+  .text-fallback input{flex:1;min-width:0;background:var(--bg);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:11px 12px;font-family:'Inter',sans-serif;font-size:13.5px;}
+  .text-fallback button{background:var(--panel);border:1px solid var(--line);color:var(--text);border-radius:6px;padding:0 12px;font-size:13px;}
+  .hint{font-size:10.5px;color:var(--muted);margin-top:7px;line-height:1.5;}
+
+  .ticket{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px;height:fit-content;position:relative;}
+  .ticket::before{content:"";position:absolute;top:0;left:18px;right:18px;height:2px;background:repeating-linear-gradient(90deg,var(--accent-dim) 0 8px, transparent 8px 16px);}
+  .ticket-head{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--accent);margin-bottom:2px;}
+  .ticket-title{font-family:'Space Grotesk',sans-serif;font-size:17px;font-weight:700;margin:2px 0 16px;}
+  .field{margin-bottom:12px;}
+  .field-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:3px;}
+  .field-value{font-size:13.5px;min-height:19px;border-bottom:1px dashed var(--line);padding-bottom:5px;word-wrap:break-word;}
+  .field-value.empty{color:var(--muted);font-style:italic;}
+  .field-value.filled{color:var(--text);font-weight:500;}
+  .field-value.just-filled{animation:flash .6s ease;}
+  @keyframes flash{0%{color:var(--live);}100%{color:var(--text);}}
+  .ticket-status{margin-top:16px;padding-top:14px;border-top:1px solid var(--line);display:flex;align-items:center;gap:7px;font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);}
+  .ticket-status .dot{background:var(--muted);}
+  .ticket-status.booked .dot{background:var(--live);}
+  .ticket-status.booked{color:var(--live);}
+
+  .history-list{display:flex;flex-direction:column;gap:10px;padding:2px;}
+  .history-empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 10px;}
+  .history-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;}
+  .history-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;}
+  .history-card-vertical{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);}
+  .history-card-time{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);}
+  .history-row{font-size:13px;margin-bottom:3px;color:var(--text);}
+  .history-row b{color:var(--muted);font-weight:500;}
+  .clear-history{margin-top:14px;background:none;border:1px solid var(--line);color:var(--muted);border-radius:6px;padding:9px 14px;font-size:12px;cursor:pointer;font-family:'Inter',sans-serif;}
+  .clear-history:hover{color:var(--ring);border-color:var(--ring);}
+
+  footer{margin-top:20px;font-size:11.5px;color:var(--muted);text-align:center;line-height:1.6;}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <div class="topbar">
+    <div>
+      <div class="brand-eyebrow">Intake AI — After-hours booking agent</div>
+      <h1>Talk to the agent, watch it book the job</h1>
+      <div class="sub">Pick a business type, start a call, and see it capture the customer's info automatically — no human on the line.</div>
+    </div>
+    <div class="status-chip" id="apiStatus">checking connection…</div>
+  </div>
+
+  <div class="vertical-picker" id="verticalPicker"></div>
+
+  <div class="tabs">
+    <div class="tab active" data-tab="call">Live call</div>
+    <div class="tab" data-tab="history">Call history</div>
+  </div>
+
+  <div id="callTab">
+    <div class="grid">
+      <div class="console">
+        <div class="console-head">
+          <div class="call-id" id="callId">CALL — NOT STARTED</div>
+          <div class="call-state">
+            <div class="dot" id="stateDot"></div>
+            <span id="stateLabel">IDLE</span>
+            <span class="timer" id="timer">00:00</span>
+          </div>
+        </div>
+
+        <div class="transcript" id="transcript">
+          <div class="placeholder" id="placeholderText">Press "Start call" to ring the line. The agent picks up and takes it from there.</div>
+        </div>
+
+        <div class="console-foot">
+          <div class="listening-row" id="listeningRow"></div>
+          <div class="controls" id="mainControls">
+            <button class="core btn-start" id="startBtn">Start call</button>
+          </div>
+          <div class="text-fallback" id="textFallback" style="display:none;">
+            <input type="text" id="textInput" placeholder="Type what the caller says…" />
+            <button class="core" id="sendTextBtn">Send</button>
+            <button class="core btn-mic" id="micBtn" title="Tap to talk">🎤</button>
+          </div>
+          <div class="hint" id="hint">Uses your browser's mic + voice. Works best in Chrome or Edge, on desktop or mobile.</div>
+        </div>
+      </div>
+
+      <div class="ticket">
+        <div class="ticket-head" id="ticketHead">Work Order</div>
+        <div class="ticket-title" id="ticketNum">#—</div>
+        <div id="fieldsContainer"></div>
+        <div class="ticket-status" id="ticketStatus"><div class="dot"></div><span>Awaiting call</span></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="historyTab" style="display:none;">
+    <div class="history-list" id="historyList"></div>
+    <button class="clear-history" id="clearHistoryBtn">Clear saved history</button>
+  </div>
+
+  <footer>
+    Prototype for sales demos. Saved calls stay on this device only.
+  </footer>
+</div>
+
+<script>
+const VERTICALS = {
+  hvac: {
+    label: 'HVAC',
+    business: 'Rapid Air Heating & Cooling',
+    ticketLabel: 'Work Order',
+    fields: [
+      {key:'name', label:'Caller name'},
+      {key:'phone', label:'Callback number'},
+      {key:'address', label:'Service address'},
+      {key:'issue', label:'Issue reported'},
+      {key:'time', label:'Requested time'}
+    ],
+    system: `You are the after-hours phone intake agent for "Rapid Air Heating & Cooling," a residential HVAC company. A customer is calling because something is wrong with their heating or cooling system, or they want to schedule service.
+
+Collect: name, callback phone number, service address, a clear description of the issue, and a preferred day/time for a technician visit. Ask for ONE missing piece at a time, conversationally. If it's an emergency (gas smell, no heat in freezing weather, smoke, sparking), tell them to call 911 or the gas company immediately, then continue booking urgently. Once all fields are collected, confirm details back in one sentence, say a technician will call to confirm the window, then end the call politely. Keep replies short — 1-3 sentences, like a real phone call.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"reply": "<what you say out loud next>", "ticket": {"name": null, "phone": null, "address": null, "issue": null, "time": null}, "call_complete": false}
+Always carry forward previously collected fields. Set call_complete true only after confirming everything and saying goodbye.`
+  },
+  dental: {
+    label: 'Dental',
+    business: 'Willow Creek Dental',
+    ticketLabel: 'Appointment Request',
+    fields: [
+      {key:'name', label:'Patient name'},
+      {key:'phone', label:'Callback number'},
+      {key:'reason', label:'Reason for visit'},
+      {key:'new_or_existing', label:'New or existing patient'},
+      {key:'time', label:'Preferred day/time'}
+    ],
+    system: `You are the after-hours phone intake agent for "Willow Creek Dental," a dental practice. A caller wants to book an appointment or has a dental concern.
+
+Collect: name, callback phone number, reason for the visit (checkup, tooth pain, cleaning, etc.), whether they're a new or existing patient, and a preferred day/time. Ask for ONE missing piece at a time, conversationally. If they describe a dental emergency (severe pain, swelling, knocked-out tooth, bleeding that won't stop), tell them to go to an ER or call the emergency line if one is mentioned, then still gather info to have a dentist call them back urgently. Once all fields are collected, confirm details back in one sentence, say the office will call to confirm, then end the call politely. Keep replies short — 1-3 sentences.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"reply": "<what you say out loud next>", "ticket": {"name": null, "phone": null, "reason": null, "new_or_existing": null, "time": null}, "call_complete": false}
+Always carry forward previously collected fields. Set call_complete true only after confirming everything and saying goodbye.`
+  },
+  electrician: {
+    label: 'Electrician',
+    business: 'Volt Line Electric',
+    ticketLabel: 'Service Ticket',
+    fields: [
+      {key:'name', label:'Caller name'},
+      {key:'phone', label:'Callback number'},
+      {key:'address', label:'Service address'},
+      {key:'issue', label:'Issue reported'},
+      {key:'time', label:'Requested time'}
+    ],
+    system: `You are the after-hours phone intake agent for "Volt Line Electric," a residential electrical services company. A customer is calling about an electrical issue or to schedule work.
+
+Collect: name, callback phone number, service address, a clear description of the issue, and a preferred day/time. Ask for ONE missing piece at a time, conversationally. If it's a genuine emergency (sparking, burning smell, exposed wiring, power arcing), tell them to shut off the breaker if safe and call 911 if there's fire risk, then continue booking urgently. Once all fields are collected, confirm details back in one sentence, say an electrician will call to confirm the window, then end the call politely. Keep replies short — 1-3 sentences.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"reply": "<what you say out loud next>", "ticket": {"name": null, "phone": null, "address": null, "issue": null, "time": null}, "call_complete": false}
+Always carry forward previously collected fields. Set call_complete true only after confirming everything and saying goodbye.`
+  }
+};
+
+let currentVertical = 'hvac';
+let conversation = [];
+let callActive = false;
+let callTimerInterval = null;
+let callSeconds = 0;
+let recognition = null;
+let speechSupported = false;
+let currentTicket = null;
+
+const el = id => document.getElementById(id);
+const transcriptEl = el('transcript');
+const startBtn = el('startBtn');
+const mainControls = el('mainControls');
+const textFallback = el('textFallback');
+const textInput = el('textInput');
+const sendTextBtn = el('sendTextBtn');
+const micBtn = el('micBtn');
+const stateDot = el('stateDot');
+const stateLabel = el('stateLabel');
+const timerEl = el('timer');
+const callIdEl = el('callId');
+const listeningRow = el('listeningRow');
+const apiStatus = el('apiStatus');
+const fieldsContainer = el('fieldsContainer');
+const ticketHead = el('ticketHead');
+const ticketNum = el('ticketNum');
+
+function renderPicker(){
+  const picker = el('verticalPicker');
+  picker.innerHTML = '';
+  Object.keys(VERTICALS).forEach(key=>{
+    const btn = document.createElement('div');
+    btn.className = 'v-btn' + (key===currentVertical ? ' active' : '');
+    btn.textContent = VERTICALS[key].label;
+    btn.addEventListener('click', ()=>{
+      if(callActive) return;
+      currentVertical = key;
+      renderPicker();
+      renderFields();
+      ticketHead.textContent = VERTICALS[key].ticketLabel;
+    });
+    picker.appendChild(btn);
+  });
+}
+function renderFields(){
+  fieldsContainer.innerHTML = '';
+  VERTICALS[currentVertical].fields.forEach(f=>{
+    const div = document.createElement('div');
+    div.className = 'field';
+    div.innerHTML = `<div class="field-label">${f.label}</div><div class="field-value empty" id="f_${f.key}">— waiting —</div>`;
+    fieldsContainer.appendChild(div);
+  });
+}
+renderPicker();
+renderFields();
+ticketHead.textContent = VERTICALS[currentVertical].ticketLabel;
+
+document.querySelectorAll('.tab').forEach(tab=>{
+  tab.addEventListener('click', ()=>{
+    document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+    tab.classList.add('active');
+    const isCall = tab.dataset.tab === 'call';
+    el('callTab').style.display = isCall ? '' : 'none';
+    el('historyTab').style.display = isCall ? 'none' : '';
+    if(!isCall) loadHistory();
+  });
+});
+
+function randomCallId(){ return 'CALL — #' + Math.floor(1000 + Math.random()*9000); }
+function randomTicketNum(){ return '#' + Math.floor(4000 + Math.random()*900); }
+
+function setState(state){
+  stateDot.className = 'dot';
+  if(state==='ringing'){ stateDot.classList.add('ringing'); stateLabel.textContent='RINGING'; }
+  else if(state==='live'){ stateDot.classList.add('live'); stateLabel.textContent='CONNECTED'; }
+  else if(state==='ended'){ stateLabel.textContent='CALL ENDED'; }
+  else { stateLabel.textContent='IDLE'; }
+}
+function startTimer(){
+  callSeconds = 0; timerEl.textContent = '00:00';
+  callTimerInterval = setInterval(()=>{
+    callSeconds++;
+    const m = String(Math.floor(callSeconds/60)).padStart(2,'0');
+    const s = String(callSeconds%60).padStart(2,'0');
+    timerEl.textContent = `${m}:${s}`;
+  }, 1000);
+}
+function stopTimer(){ clearInterval(callTimerInterval); }
+
+function addMessage(role, text){
+  transcriptEl.querySelectorAll('.placeholder').forEach(p=>p.remove());
+  const div = document.createElement('div');
+  div.className = 'msg ' + (role==='agent' ? 'agent' : 'caller');
+  const label = document.createElement('span');
+  label.className = 'msg-label';
+  label.textContent = role==='agent' ? 'AI agent' : 'Caller';
+  div.appendChild(label);
+  const body = document.createElement('div');
+  body.textContent = text;
+  div.appendChild(body);
+  transcriptEl.appendChild(div);
+  transcriptEl.scrollTop = transcriptEl.scrollHeight;
+}
+
+function updateTicket(ticket){
+  currentTicket = ticket;
+  VERTICALS[currentVertical].fields.forEach(f=>{
+    const node = el('f_' + f.key);
+    if(!node) return;
+    const val = ticket ? ticket[f.key] : null;
+    if(val){
+      const changed = node.textContent !== val;
+      node.textContent = val;
+      node.className = 'field-value filled' + (changed ? ' just-filled' : '');
+    } else {
+      node.textContent = '— waiting —';
+      node.className = 'field-value empty';
+    }
+  });
+}
+
+function markBooked(){
+  const status = el('ticketStatus');
+  status.className = 'ticket-status booked';
+  status.innerHTML = '<div class="dot"></div><span>Booked — will confirm window</span>';
+}
+
+function speak(text){
+  return new Promise(resolve=>{
+    if(!('speechSynthesis' in window)){ resolve(); return; }
+    window.speechSynthesis.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.rate = 1.02; utter.pitch = 1.0;
+    utter.onend = resolve; utter.onerror = resolve;
+    window.speechSynthesis.speak(utter);
+  });
+}
+
+async function callClaude(){
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body: JSON.stringify({
+      model:'claude-sonnet-4-6', max_tokens:1000,
+      system: VERTICALS[currentVertical].system,
+      messages: conversation
+    })
+  });
+  const data = await res.json();
+  const raw = (data.content || []).map(b=>b.text||'').join('').trim();
+  const clean = raw.replace(/^```json/,'').replace(/^```/,'').replace(/```$/,'').trim();
+  return JSON.parse(clean);
+}
+
+async function saveCallToHistory(ticket, completed){
+  try{
+    const id = 'call:' + Date.now();
+    const record = {
+      vertical: currentVertical,
+      verticalLabel: VERTICALS[currentVertical].label,
+      ticket, completed,
+      timestamp: new Date().toISOString()
+    };
+    await window.storage.set(id, JSON.stringify(record), false);
+  } catch(e){ console.error('save failed', e); }
+}
+
+async function loadHistory(){
+  const list = el('historyList');
+  list.innerHTML = '<div class="history-empty">Loading…</div>';
+  try{
+    const result = await window.storage.list('call:', false);
+    const keys = (result && result.keys) ? result.keys : [];
+    if(keys.length === 0){
+      list.innerHTML = '<div class="history-empty">No saved calls yet. Finish a call and it will show up here.</div>';
+      return;
+    }
+    const records = [];
+    for(const k of keys){
+      try{
+        const r = await window.storage.get(k, false);
+        if(r && r.value) records.push(JSON.parse(r.value));
+      }catch(e){}
+    }
+    records.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
+    list.innerHTML = '';
+    records.forEach(rec=>{
+      const card = document.createElement('div');
+      card.className = 'history-card';
+      const time = new Date(rec.timestamp).toLocaleString();
+      const fieldsHtml = VERTICALS[rec.vertical] ? VERTICALS[rec.vertical].fields.map(f=>{
+        const v = rec.ticket ? rec.ticket[f.key] : null;
+        return v ? `<div class="history-row"><b>${f.label}:</b> ${v}</div>` : '';
+      }).join('') : '';
+      card.innerHTML = `
+        <div class="history-card-head">
+          <div class="history-card-vertical">${rec.verticalLabel}${rec.completed ? ' · booked' : ' · incomplete'}</div>
+          <div class="history-card-time">${time}</div>
+        </div>
+        ${fieldsHtml}`;
+      list.appendChild(card);
+    });
+  } catch(e){
+    list.innerHTML = '<div class="history-empty">Could not load history.</div>';
+  }
+}
+
+el('clearHistoryBtn').addEventListener('click', async ()=>{
+  try{
+    const result = await window.storage.list('call:', false);
+    const keys = (result && result.keys) ? result.keys : [];
+    for(const k of keys){ await window.storage.delete(k, false); }
+    loadHistory();
+  } catch(e){}
+});
+
+async function agentTurn(){
+  setState('live');
+  listeningRow.textContent = '';
+  try{
+    const parsed = await callClaude();
+    conversation.push({role:'assistant', content: JSON.stringify(parsed)});
+    addMessage('agent', parsed.reply);
+    updateTicket(parsed.ticket);
+    await speak(parsed.reply);
+    if(parsed.call_complete){
+      markBooked();
+      await saveCallToHistory(parsed.ticket, true);
+      endCall(true);
+    } else {
+      readyForCaller();
+    }
+  } catch(e){
+    addMessage('agent', "Sorry — the demo hit a connection issue. Try again in a moment.");
+    console.error(e);
+    readyForCaller();
+  }
+}
+
+function readyForCaller(){
+  listeningRow.textContent = speechSupported ? 'Tap the mic and talk, or type below.' : "Type the caller's response below.";
+}
+
+async function userTurn(text){
+  if(!text || !text.trim()) return;
+  addMessage('caller', text);
+  conversation.push({role:'user', content: text});
+  listeningRow.innerHTML = '<span>Agent thinking…</span>';
+  await agentTurn();
+}
+
+function initSpeech(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if(!SR){ speechSupported = false; return; }
+  speechSupported = true;
+  recognition = new SR();
+  recognition.continuous = false;
+  recognition.interimResults = false;
+  recognition.lang = 'en-US';
+  recognition.onstart = ()=>{
+    micBtn.classList.add('recording');
+    listeningRow.innerHTML = '<div class="bars"><span></span><span></span><span></span><span></span></div><span>Listening…</span>';
+  };
+  recognition.onerror = ()=>{
+    micBtn.classList.remove('recording');
+    listeningRow.textContent = "Didn't catch that — try again or type it.";
+  };
+  recognition.onend = ()=>{ micBtn.classList.remove('recording'); };
+  recognition.onresult = (event)=>{
+    const text = event.results[0][0].transcript;
+    userTurn(text);
+  };
+}
+
+micBtn?.addEventListener('click', ()=>{ if(recognition && callActive) recognition.start(); });
+sendTextBtn?.addEventListener('click', ()=>{
+  const val = textInput.value; textInput.value = '';
+  if(callActive) userTurn(val);
+});
+textInput?.addEventListener('keydown', (e)=>{ if(e.key==='Enter'){ sendTextBtn.click(); } });
+
+startBtn.addEventListener('click', async ()=>{
+  callActive = true;
+  conversation = [];
+  transcriptEl.innerHTML = '';
+  callIdEl.textContent = randomCallId();
+  ticketNum.textContent = randomTicketNum();
+  updateTicket(null);
+  el('ticketStatus').className = 'ticket-status';
+  el('ticketStatus').innerHTML = '<div class="dot"></div><span>Call in progress</span>';
+
+  mainControls.innerHTML = '<button class="core btn-end" id="endBtn">End call</button>';
+  el('endBtn').addEventListener('click', ()=>endCall(false));
+  textFallback.style.display = 'flex';
+  micBtn.style.display = speechSupported ? '' : 'none';
+
+  setState('ringing');
+  await new Promise(r=>setTimeout(r, 900));
+  startTimer();
+
+  conversation.push({role:'user', content:'[The phone has just been answered. Greet the caller and open the call.]'});
+  await agentTurn();
+});
+
+function endCall(completed){
+  callActive = false;
+  stopTimer();
+  window.speechSynthesis?.cancel();
+  setState('ended');
+  listeningRow.textContent = '';
+  mainControls.innerHTML = '<button class="core btn-start" id="restartBtn">Start new call</button>';
+  el('restartBtn').addEventListener('click', ()=>startBtn.click());
+  textFallback.style.display = 'none';
+  if(!completed){
+    const status = el('ticketStatus');
+    if(!status.classList.contains('booked')){
+      status.innerHTML = '<div class="dot"></div><span>Call ended early — incomplete</span>';
+      if(currentTicket) saveCallToHistory(currentTicket, false);
+    }
+  }
+}
+
+(async ()=>{
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({model:'claude-sonnet-4-6', max_tokens:10, messages:[{role:'user',content:'hi'}]})
+    });
+    apiStatus.textContent = res.ok ? 'agent ready' : 'connection issue';
+    apiStatus.style.color = res.ok ? '#3ddc84' : '#ff5a5f';
+  }catch(e){
+    apiStatus.textContent = 'connection issue';
+    apiStatus.style.color = '#ff5a5f';
+  }
+})();
+
+initSpeech();
+if(!speechSupported){
+  el('hint').textContent = 'Voice input not supported in this browser — use Chrome or Edge for mic input, or type responses below.';
+}
+</script>
+</body>
+</html>
