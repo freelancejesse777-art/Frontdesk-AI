@@ -36,6 +36,7 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
 const { createCalendarEvent } = require('./google-calendar');
+const { notifyOwner } = require('./notify');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -200,9 +201,10 @@ async function askClaude(system, messages) {
 
 // ---------------------------------------------------
 // Save a completed ticket.
-// Also creates a Google Calendar event if calendar sync is configured
-// (see SETUP-CALENDAR.md) — otherwise this step is silently skipped
-// and everything else still works normally.
+// Emails the business owner immediately and creates a Google Calendar
+// event if either is configured (see SETUP-NOTIFICATIONS.md and
+// SETUP-GOOGLE-INTEGRATIONS.md) — otherwise those steps are silently
+// skipped and the phone agent still works normally.
 // ---------------------------------------------------
 async function saveTicket(vertical, ticket) {
   console.log(`\n=== NEW BOOKED TICKET (${vertical}) ===`);
@@ -210,13 +212,20 @@ async function saveTicket(vertical, ticket) {
   console.log('=======================================\n');
 
   const businessLabel = (VERTICALS[vertical] && VERTICALS[vertical].business) || vertical;
+
+  try {
+    await notifyOwner(vertical, businessLabel, ticket);
+  } catch (e) {
+    console.error('[notify] Failed:', e.message);
+  }
+
   try {
     await createCalendarEvent(vertical, businessLabel, ticket);
   } catch (e) {
     console.error('[calendar] Failed to create event:', e.message);
   }
 
-  // TODO: also wire up a database insert, CRM API call, email, or Slack webhook here.
+  // TODO: also wire up a database insert or CRM API call here if needed.
 }
 
 // ---------------------------------------------------
