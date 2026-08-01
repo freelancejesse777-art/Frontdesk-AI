@@ -46,7 +46,7 @@ const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY;
 const PORT = process.env.PORT || 3000;
 
 // ---------------------------------------------------
-// VERTICAL CONFIG — same scripts as the browser demo
+// VERTICAL CONFIG — same scripts as the web app
 // ---------------------------------------------------
 const VERTICALS = {
   hvac: {
@@ -162,7 +162,7 @@ Always carry forward previously collected fields. Set call_complete true only af
 // Resolve each vertical's real business name from an environment variable if
 // the client has set one (e.g. BUSINESS_NAME_HVAC="Rapid Air Heating & Cooling").
 // Falls back to a generic category label if no env var is set, so this works
-// out of the box for demos and gets personalized once deployed for a real client.
+// out of the box with a generic label and gets personalized once deployed for a real client.
 for (const key of Object.keys(VERTICALS)) {
   const v = VERTICALS[key];
   const resolvedName = (v.envVar && process.env[v.envVar]) ? process.env[v.envVar] : v.business;

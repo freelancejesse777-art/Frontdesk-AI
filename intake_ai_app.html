@@ -282,7 +282,7 @@
   </div>
 
   <footer>
-    Prototype for sales demos. Saved calls stay on this device only.
+    Call records are saved on this device only.
   </footer>
 </div>
 
@@ -495,7 +495,7 @@ function currentBusinessName(){
 // ---------------------------------------------------
 // Google Places lookup (optional) — lets you search for a real
 // business instead of typing its name from memory. Requires the
-// user's own Google Places API key, since this demo has no backend
+// user's own Google Places API key, since this runs client-side with no backend
 // of its own to hold one securely. Nothing is sent anywhere except
 // directly to Google, using the browser's own network request.
 //
@@ -679,7 +679,7 @@ function renderPicker(){
       renderFields();
       ticketHead.textContent = VERTICALS[key].ticketLabel;
       businessNameInput.value = businessNameByVertical[key] || '';
-      businessNameInput.placeholder = `Type the real business name for this demo… (e.g. ${VERTICALS[key].business})`;
+      businessNameInput.placeholder = `Type the business name… (e.g. ${VERTICALS[key].business})`;
     });
     picker.appendChild(btn);
   });
@@ -696,7 +696,7 @@ function renderFields(){
 renderPicker();
 renderFields();
 ticketHead.textContent = VERTICALS[currentVertical].ticketLabel;
-businessNameInput.placeholder = `Type the real business name for this demo… (e.g. ${VERTICALS[currentVertical].business})`;
+businessNameInput.placeholder = `Type the business name… (e.g. ${VERTICALS[currentVertical].business})`;
 
 document.querySelectorAll('.tab').forEach(tab=>{
   tab.addEventListener('click', ()=>{
@@ -959,7 +959,7 @@ async function agentTurn(){
       readyForCaller();
     }
   } catch(e){
-    addMessage('agent', "Sorry — the demo hit a connection issue. Try again in a moment.");
+    addMessage('agent', "Sorry — we hit a connection issue. Try again in a moment.");
     console.error(e);
     readyForCaller();
   }
