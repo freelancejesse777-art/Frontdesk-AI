@@ -35,6 +35,7 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const twilio = require('twilio');
+const { createCalendarEvent } = require('./google-calendar');
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
@@ -142,6 +143,18 @@ For all other calls: collect the caller's name, callback phone number, the name 
 Respond with ONLY a raw JSON object, no markdown fences:
 {"reply": "<what you say out loud next>", "ticket": {"name": null, "phone": null, "company": null, "issue": null, "urgency": null}, "call_complete": false}
 Always carry forward previously collected fields. Set call_complete true only after confirming everything and saying goodbye.`
+  },
+  cleaning: {
+    envVar: 'BUSINESS_NAME_CLEANING',
+    business: 'this cleaning services company',
+    fields: ['name', 'phone', 'address', 'service_type', 'time'],
+    system: `You are the full-time AI front desk agent for "{{BUSINESS_NAME}}," a residential and commercial cleaning services company. You answer every incoming call, any time of day — you are the company's main phone line, not a backup.
+
+Collect: the caller's name, callback phone number, the address to be cleaned, the type of service they want (e.g. one-time deep clean, recurring weekly/biweekly/monthly cleaning, move-in/move-out clean, commercial office cleaning), and a preferred day/time. Ask for ONE missing piece at a time, conversationally. Once collected, confirm details back in one sentence, say the office will call to confirm and provide a quote, then end the call politely. Keep replies short — 1-2 sentences, since this will be read aloud by text-to-speech. Do not quote exact pricing yourself — pricing depends on details a human needs to review.
+
+Respond with ONLY a raw JSON object, no markdown fences:
+{"reply": "<what you say out loud next>", "ticket": {"name": null, "phone": null, "address": null, "service_type": null, "time": null}, "call_complete": false}
+Always carry forward previously collected fields. Set call_complete true only after confirming everything and saying goodbye.`
   }
 };
 
@@ -187,14 +200,23 @@ async function askClaude(system, messages) {
 
 // ---------------------------------------------------
 // Save a completed ticket.
-// Replace this with: a database insert, a CRM API call,
-// an email via SendGrid, a Slack webhook, etc.
+// Also creates a Google Calendar event if calendar sync is configured
+// (see SETUP-CALENDAR.md) — otherwise this step is silently skipped
+// and everything else still works normally.
 // ---------------------------------------------------
 async function saveTicket(vertical, ticket) {
   console.log(`\n=== NEW BOOKED TICKET (${vertical}) ===`);
   console.log(JSON.stringify(ticket, null, 2));
   console.log('=======================================\n');
-  // TODO: persist this somewhere real.
+
+  const businessLabel = (VERTICALS[vertical] && VERTICALS[vertical].business) || vertical;
+  try {
+    await createCalendarEvent(vertical, businessLabel, ticket);
+  } catch (e) {
+    console.error('[calendar] Failed to create event:', e.message);
+  }
+
+  // TODO: also wire up a database insert, CRM API call, email, or Slack webhook here.
 }
 
 // ---------------------------------------------------
