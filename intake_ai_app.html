@@ -74,6 +74,18 @@
      force it above everything and keep it readable regardless of theme. */
   .pac-container{z-index:99999 !important;font-family:'Inter',sans-serif !important;}
 
+  .places-dropdown{
+    display:none;position:absolute;top:100%;left:0;right:0;margin-top:4px;
+    background:var(--panel-2);border:1px solid var(--accent);border-radius:6px;
+    max-height:220px;overflow-y:auto;z-index:9999;
+    box-shadow:0 8px 20px rgba(0,0,0,.4);
+  }
+  .places-dropdown-item{padding:10px 14px;cursor:pointer;border-bottom:1px solid var(--line);}
+  .places-dropdown-item:last-child{border-bottom:none;}
+  .places-dropdown-item:hover{background:var(--bg);}
+  .pdi-main{font-size:13.5px;color:var(--text);font-weight:500;}
+  .pdi-sub{font-size:11.5px;color:var(--muted);margin-top:2px;}
+
   .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
   .tab{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
     color:var(--muted);padding:9px 14px;cursor:pointer;border-bottom:2px solid transparent;}
@@ -445,62 +457,124 @@ function currentBusinessName(){
 // user's own Google Places API key, since this demo has no backend
 // of its own to hold one securely. Nothing is sent anywhere except
 // directly to Google, using the browser's own network request.
+//
+// This calls Google's current Places API directly (not the older
+// widget-based Autocomplete, which Google has closed off to any
+// Google Cloud project created after March 2025) and renders its own
+// dropdown, styled to match the rest of the app instead of Google's
+// default look.
 // ---------------------------------------------------
-let placesAutocomplete = null;
 const placesApiKeyInput = el('placesApiKeyInput');
 const connectPlacesBtn = el('connectPlacesBtn');
 const placesStatus = el('placesStatus');
+let currentApiKey = '';
+let placesSearchTimer = null;
+let placesDropdown = null;
 
-function loadGooglePlacesScript(apiKey){
-  return new Promise((resolve, reject)=>{
-    if(window.google && window.google.maps && window.google.maps.places){
-      resolve();
+function ensureDropdown(){
+  if(placesDropdown) return placesDropdown;
+  placesDropdown = document.createElement('div');
+  placesDropdown.className = 'places-dropdown';
+  businessNameInput.parentElement.style.position = 'relative';
+  businessNameInput.parentElement.appendChild(placesDropdown);
+  return placesDropdown;
+}
+
+function hideDropdown(){
+  if(placesDropdown) placesDropdown.style.display = 'none';
+}
+
+async function searchPlaces(query){
+  if(!currentApiKey || !query || query.length < 2){ hideDropdown(); return; }
+  try{
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': currentApiKey,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.text,suggestions.placePrediction.placeId,suggestions.placePrediction.structuredFormat'
+      },
+      body: JSON.stringify({ input: query, includedPrimaryTypes: ['establishment'] })
+    });
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      const msg = errBody?.error?.message || `Request failed (${res.status})`;
+      placesStatus.textContent = `Search error: ${msg}`;
+      hideDropdown();
       return;
     }
-    // Google prints a known, non-actionable deprecation notice about the
-    // Autocomplete widget (still fully supported, just steering new
-    // integrations toward a newer component). Filtering just that one
-    // specific message keeps real warnings visible.
-    const originalWarn = console.warn;
-    console.warn = function(...args){
-      const text = args.join(' ');
-      if(text.includes('google.maps.places.Autocomplete is not available to new customers')) return;
-      originalWarn.apply(console, args);
-    };
-    setTimeout(()=>{ console.warn = originalWarn; }, 5000);
-
-    const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async`;
-    script.async = true;
-    script.onload = ()=> resolve();
-    script.onerror = ()=> reject(new Error('Failed to load Google Places — check that the API key is valid and Places API is enabled for it.'));
-    document.head.appendChild(script);
-  });
+    const data = await res.json();
+    const suggestions = data.suggestions || [];
+    renderDropdown(suggestions);
+  } catch(e){
+    placesStatus.textContent = 'Search error — check your connection or API key.';
+    hideDropdown();
+  }
 }
 
-function attachAutocomplete(){
-  if(!window.google || !window.google.maps || !window.google.maps.places) return;
-  placesAutocomplete = new google.maps.places.Autocomplete(businessNameInput, {
-    types: ['establishment'],
-    fields: ['name', 'formatted_address', 'formatted_phone_number']
+function renderDropdown(suggestions){
+  const dropdown = ensureDropdown();
+  dropdown.innerHTML = '';
+  if(!suggestions.length){
+    hideDropdown();
+    return;
+  }
+  suggestions.forEach(s=>{
+    const pred = s.placePrediction;
+    if(!pred) return;
+    const item = document.createElement('div');
+    item.className = 'places-dropdown-item';
+    const mainText = pred.structuredFormat?.mainText?.text || pred.text?.text || '';
+    const secondaryText = pred.structuredFormat?.secondaryText?.text || '';
+    item.innerHTML = `<div class="pdi-main">${mainText}</div>${secondaryText ? `<div class="pdi-sub">${secondaryText}</div>` : ''}`;
+    item.addEventListener('mousedown', (e)=>{
+      // mousedown (not click) so this fires before the input's blur event hides the dropdown
+      e.preventDefault();
+      businessNameInput.value = mainText;
+      businessNameByVertical[currentVertical] = mainText;
+      placesStatus.textContent = secondaryText ? `Selected: ${mainText} — ${secondaryText}` : `Selected: ${mainText}`;
+      hideDropdown();
+    });
+    dropdown.appendChild(item);
   });
-  placesAutocomplete.addListener('place_changed', ()=>{
-    const place = placesAutocomplete.getPlace();
-    if(!place || !place.name) return;
-    businessNameInput.value = place.name;
-    businessNameByVertical[currentVertical] = place.name;
-    let detail = place.name;
-    if(place.formatted_address) detail += ` — ${place.formatted_address}`;
-    placesStatus.textContent = `Selected: ${detail}`;
-  });
+  dropdown.style.display = 'block';
 }
+
+businessNameInput.addEventListener('input', ()=>{
+  businessNameByVertical[currentVertical] = businessNameInput.value;
+  clearTimeout(placesSearchTimer);
+  const query = businessNameInput.value.trim();
+  placesSearchTimer = setTimeout(()=> searchPlaces(query), 300); // debounce so we're not firing a request per keystroke
+});
+businessNameInput.addEventListener('blur', ()=>{
+  setTimeout(hideDropdown, 150); // slight delay so a click on a dropdown item still registers
+});
 
 async function connectWithKey(key, { save } = { save: true }){
   connectPlacesBtn.disabled = true;
-  connectPlacesBtn.textContent = 'Connecting…';
+  connectPlacesBtn.textContent = 'Checking…';
   try{
-    await loadGooglePlacesScript(key);
-    attachAutocomplete();
+    // Quick real test call so a bad key or a not-yet-enabled API is caught
+    // immediately, with a clear message, instead of failing silently later.
+    const res = await fetch('https://places.googleapis.com/v1/places:autocomplete', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'X-Goog-Api-Key': key,
+        'X-Goog-FieldMask': 'suggestions.placePrediction.text'
+      },
+      body: JSON.stringify({ input: 'test' })
+    });
+    if(!res.ok){
+      const errBody = await res.json().catch(()=>({}));
+      const msg = errBody?.error?.message || `Request failed (${res.status})`;
+      throw new Error(
+        msg.includes('API_KEY') || msg.includes('not been used') || msg.includes('disabled')
+          ? `${msg} — in Google Cloud Console, make sure "Places API (New)" is enabled (not just "Places API").`
+          : msg
+      );
+    }
+    currentApiKey = key;
     placesStatus.textContent = 'Connected — start typing a business name below to search.';
     connectPlacesBtn.textContent = 'Connected ✓';
     if(save){
@@ -525,6 +599,7 @@ connectPlacesBtn.addEventListener('click', ()=>{
 el('forgetPlacesBtn').addEventListener('click', async ()=>{
   try{ await window.storage.delete('places_api_key', false); }catch(e){}
   placesApiKeyInput.value = '';
+  currentApiKey = '';
   placesStatus.textContent = 'Saved key removed from this device.';
   connectPlacesBtn.disabled = false;
   connectPlacesBtn.textContent = 'Connect';
