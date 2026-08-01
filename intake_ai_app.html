@@ -151,9 +151,38 @@
 
   .history-list{display:flex;flex-direction:column;gap:10px;padding:2px;}
   .history-empty{color:var(--muted);font-size:13px;text-align:center;padding:40px 10px;}
+
+  .history-stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;}
+  .hstat{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:10px 16px;min-width:90px;}
+  .hstat-num{font-family:'Space Grotesk',sans-serif;font-size:20px;font-weight:700;color:var(--text);}
+  .hstat-label{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:2px;}
+  .hstat.booked .hstat-num{color:var(--live);}
+  .hstat.incomplete .hstat-num{color:var(--ring);}
+
+  .history-controls{display:flex;gap:10px;flex-wrap:wrap;align-items:center;margin-bottom:16px;}
+  .history-filter-group{display:flex;gap:6px;flex-wrap:wrap;}
+  .hf-chip{
+    font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.04em;
+    background:var(--panel);border:1px solid var(--line);color:var(--muted);
+    border-radius:20px;padding:6px 12px;cursor:pointer;white-space:nowrap;
+  }
+  .hf-chip.active{background:var(--accent);color:#1a1204;border-color:var(--accent);}
+  .hf-chip:not(.active):hover{border-color:var(--accent);color:var(--text);}
+  #historySearch{
+    flex:1;min-width:160px;background:var(--panel);border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:8px 12px;font-family:'Inter',sans-serif;font-size:12.5px;
+  }
+  #historySearch:focus{outline:none;border-color:var(--accent);}
+
   .history-card{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;}
+  .history-card.status-booked{border-left:3px solid var(--live);}
+  .history-card.status-incomplete{border-left:3px solid var(--ring);}
   .history-card-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:6px;}
+  .history-card-left{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}
   .history-card-vertical{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--accent);}
+  .history-status-badge{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.06em;text-transform:uppercase;padding:2px 8px;border-radius:10px;}
+  .history-status-badge.booked{background:rgba(61,220,132,.15);color:var(--live);}
+  .history-status-badge.incomplete{background:rgba(255,90,95,.15);color:var(--ring);}
   .history-card-time{font-family:'IBM Plex Mono',monospace;font-size:10.5px;color:var(--muted);}
   .history-row{font-size:13px;margin-bottom:3px;color:var(--text);}
   .history-row b{color:var(--muted);font-weight:500;}
@@ -236,6 +265,18 @@
   </div>
 
   <div id="historyTab" style="display:none;">
+    <div class="history-stats" id="historyStats"></div>
+
+    <div class="history-controls">
+      <div class="history-filter-group" id="historyVerticalFilters"></div>
+      <div class="history-filter-group" id="historyStatusFilters">
+        <div class="hf-chip active" data-status="all">All</div>
+        <div class="hf-chip" data-status="booked">Booked</div>
+        <div class="hf-chip" data-status="incomplete">Incomplete</div>
+      </div>
+      <input type="text" id="historySearch" placeholder="Search name or phone…" />
+    </div>
+
     <div class="history-list" id="historyList"></div>
     <button class="clear-history" id="clearHistoryBtn">Clear saved history</button>
   </div>
@@ -768,6 +809,10 @@ async function saveCallToHistory(ticket, completed){
   } catch(e){ console.error('save failed', e); }
 }
 
+let allHistoryRecords = [];
+let historyVerticalFilter = 'all';
+let historyStatusFilter = 'all';
+
 async function loadHistory(){
   const list = el('historyList');
   list.innerHTML = '<div class="history-empty">Loading…</div>';
@@ -775,6 +820,9 @@ async function loadHistory(){
     const result = await window.storage.list('call:', false);
     const keys = (result && result.keys) ? result.keys : [];
     if(keys.length === 0){
+      allHistoryRecords = [];
+      renderHistoryStats();
+      renderHistoryFilters();
       list.innerHTML = '<div class="history-empty">No saved calls yet. Finish a call and it will show up here.</div>';
       return;
     }
@@ -786,33 +834,110 @@ async function loadHistory(){
       }catch(e){}
     }
     records.sort((a,b)=> new Date(b.timestamp) - new Date(a.timestamp));
-    list.innerHTML = '';
-    records.forEach(rec=>{
-      const card = document.createElement('div');
-      card.className = 'history-card';
-      const time = new Date(rec.timestamp).toLocaleString();
-      const fieldsHtml = VERTICALS[rec.vertical] ? VERTICALS[rec.vertical].fields.map(f=>{
-        const v = rec.ticket ? rec.ticket[f.key] : null;
-        return v ? `<div class="history-row"><b>${f.label}:</b> ${v}</div>` : '';
-      }).join('') : '';
-      card.innerHTML = `
-        <div class="history-card-head">
-          <div class="history-card-vertical">${rec.verticalLabel}${rec.completed ? ' · booked' : ' · incomplete'}</div>
-          <div class="history-card-time">${time}</div>
-        </div>
-        ${fieldsHtml}`;
-      list.appendChild(card);
-    });
+    allHistoryRecords = records;
+    renderHistoryStats();
+    renderHistoryFilters();
+    renderHistoryList();
   } catch(e){
     list.innerHTML = '<div class="history-empty">Could not load history.</div>';
   }
 }
+
+function renderHistoryStats(){
+  const total = allHistoryRecords.length;
+  const booked = allHistoryRecords.filter(r=>r.completed).length;
+  const incomplete = total - booked;
+  const statsEl = el('historyStats');
+  if(total === 0){ statsEl.innerHTML = ''; return; }
+  statsEl.innerHTML = `
+    <div class="hstat"><div class="hstat-num">${total}</div><div class="hstat-label">Total calls</div></div>
+    <div class="hstat booked"><div class="hstat-num">${booked}</div><div class="hstat-label">Booked</div></div>
+    <div class="hstat incomplete"><div class="hstat-num">${incomplete}</div><div class="hstat-label">Incomplete</div></div>
+  `;
+}
+
+function renderHistoryFilters(){
+  const container = el('historyVerticalFilters');
+  const verticalsPresent = [...new Set(allHistoryRecords.map(r=>r.vertical))];
+  container.innerHTML = '';
+  const allChip = document.createElement('div');
+  allChip.className = 'hf-chip' + (historyVerticalFilter==='all' ? ' active' : '');
+  allChip.textContent = 'All types';
+  allChip.addEventListener('click', ()=>{ historyVerticalFilter='all'; renderHistoryFilters(); renderHistoryList(); });
+  container.appendChild(allChip);
+  verticalsPresent.forEach(v=>{
+    const label = VERTICALS[v] ? VERTICALS[v].label : v;
+    const count = allHistoryRecords.filter(r=>r.vertical===v).length;
+    const chip = document.createElement('div');
+    chip.className = 'hf-chip' + (historyVerticalFilter===v ? ' active' : '');
+    chip.textContent = `${label} (${count})`;
+    chip.addEventListener('click', ()=>{ historyVerticalFilter=v; renderHistoryFilters(); renderHistoryList(); });
+    container.appendChild(chip);
+  });
+}
+
+function renderHistoryList(){
+  const list = el('historyList');
+  const search = el('historySearch').value.trim().toLowerCase();
+
+  const filtered = allHistoryRecords.filter(rec=>{
+    if(historyVerticalFilter !== 'all' && rec.vertical !== historyVerticalFilter) return false;
+    if(historyStatusFilter === 'booked' && !rec.completed) return false;
+    if(historyStatusFilter === 'incomplete' && rec.completed) return false;
+    if(search){
+      const name = (rec.ticket?.name || '').toLowerCase();
+      const phone = (rec.ticket?.phone || '').toLowerCase();
+      if(!name.includes(search) && !phone.includes(search)) return false;
+    }
+    return true;
+  });
+
+  if(filtered.length === 0){
+    list.innerHTML = '<div class="history-empty">No calls match these filters.</div>';
+    return;
+  }
+
+  list.innerHTML = '';
+  filtered.forEach(rec=>{
+    const card = document.createElement('div');
+    card.className = 'history-card status-' + (rec.completed ? 'booked' : 'incomplete');
+    const time = new Date(rec.timestamp).toLocaleString();
+    const fieldsHtml = VERTICALS[rec.vertical] ? VERTICALS[rec.vertical].fields.map(f=>{
+      const v = rec.ticket ? rec.ticket[f.key] : null;
+      return v ? `<div class="history-row"><b>${f.label}:</b> ${v}</div>` : '';
+    }).join('') : '';
+    card.innerHTML = `
+      <div class="history-card-head">
+        <div class="history-card-left">
+          <div class="history-card-vertical">${rec.verticalLabel}</div>
+          <div class="history-status-badge ${rec.completed ? 'booked' : 'incomplete'}">${rec.completed ? 'Booked' : 'Incomplete'}</div>
+        </div>
+        <div class="history-card-time">${time}</div>
+      </div>
+      ${fieldsHtml}`;
+    list.appendChild(card);
+  });
+}
+
+document.querySelectorAll('#historyStatusFilters .hf-chip').forEach(chip=>{
+  chip.addEventListener('click', ()=>{
+    document.querySelectorAll('#historyStatusFilters .hf-chip').forEach(c=>c.classList.remove('active'));
+    chip.classList.add('active');
+    historyStatusFilter = chip.dataset.status;
+    renderHistoryList();
+  });
+});
+
+el('historySearch').addEventListener('input', renderHistoryList);
 
 el('clearHistoryBtn').addEventListener('click', async ()=>{
   try{
     const result = await window.storage.list('call:', false);
     const keys = (result && result.keys) ? result.keys : [];
     for(const k of keys){ await window.storage.delete(k, false); }
+    allHistoryRecords = [];
+    historyVerticalFilter = 'all';
+    historyStatusFilter = 'all';
     loadHistory();
   } catch(e){}
 });
