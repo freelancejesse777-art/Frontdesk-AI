@@ -40,14 +40,39 @@
   .v-btn.active{background:var(--accent);color:#1a1204;border-color:var(--accent);}
   .v-btn:not(.active):hover{border-color:var(--accent);color:var(--text);}
 
-  .business-name-row{display:flex;align-items:center;gap:10px;margin-bottom:16px;flex-wrap:wrap;}
-  .business-name-row label{font-family:'IBM Plex Mono',monospace;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
-  .business-name-row input{
-    flex:1;min-width:220px;max-width:420px;background:var(--panel);border:1px solid var(--line);color:var(--text);
-    border-radius:6px;padding:9px 12px;font-family:'Inter',sans-serif;font-size:13.5px;
+  .places-key-bar{
+    display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+    padding:8px 12px;margin-bottom:14px;
+    background:transparent;border:1px dashed var(--line);border-radius:6px;
   }
-  .business-name-row input:focus{outline:none;border-color:var(--accent);}
-  .business-name-row .hint-inline{font-size:11px;color:var(--muted);}
+  .places-key-label{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);white-space:nowrap;}
+  .places-key-bar input{
+    flex:1;min-width:180px;max-width:320px;background:var(--bg);border:1px solid var(--line);color:var(--muted);
+    border-radius:5px;padding:6px 10px;font-family:'Inter',sans-serif;font-size:12px;
+  }
+  .places-key-bar input:focus{outline:none;border-color:var(--accent);color:var(--text);}
+  .places-key-bar button{padding:6px 12px;font-size:12px;background:var(--panel);border:1px solid var(--line);color:var(--text);}
+  .places-key-bar .hint-inline{font-size:10.5px;color:var(--muted);}
+
+  .business-name-box{
+    background:var(--panel);border:2px solid var(--accent);border-radius:8px;
+    padding:14px 16px;margin-bottom:18px;
+  }
+  .business-name-box label{
+    display:block;font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--accent);margin-bottom:8px;
+  }
+  .business-name-box input{
+    width:100%;background:var(--bg);border:1px solid var(--line);color:var(--text);
+    border-radius:6px;padding:12px 14px;font-family:'Inter',sans-serif;font-size:15px;font-weight:500;
+    margin-bottom:6px;
+  }
+  .business-name-box input:focus{outline:none;border-color:var(--accent);}
+  .business-name-box .hint-inline{font-size:11px;color:var(--muted);}
+
+  /* Google's autocomplete dropdown is appended outside our layout —
+     force it above everything and keep it readable regardless of theme. */
+  .pac-container{z-index:99999 !important;font-family:'Inter',sans-serif !important;}
 
   .tabs{display:flex;gap:4px;margin-bottom:14px;border-bottom:1px solid var(--line);}
   .tab{font-family:'IBM Plex Mono',monospace;font-size:11px;letter-spacing:.06em;text-transform:uppercase;
@@ -140,16 +165,17 @@
 
   <div class="vertical-picker" id="verticalPicker"></div>
 
-  <div class="business-name-row" id="placesKeyRow">
-    <label for="placesApiKeyInput">Google Places API key</label>
-    <input type="text" id="placesApiKeyInput" placeholder="Paste your Google Places API key to enable business search…" />
-    <button class="core" id="connectPlacesBtn" style="padding:9px 14px;background:var(--panel);border:1px solid var(--line);color:var(--text);">Connect</button>
-    <span class="hint-inline" id="placesStatus">Optional — lets you search real businesses instead of typing the name manually</span>
+  <div class="places-key-bar" id="placesKeyRow">
+    <span class="places-key-label">Google Places search (optional)</span>
+    <input type="text" id="placesApiKeyInput" placeholder="Paste your Google Places API key…" />
+    <button class="core" id="connectPlacesBtn">Connect</button>
+    <button class="core" id="forgetPlacesBtn" title="Remove the saved key from this device">Forget key</button>
+    <span class="hint-inline" id="placesStatus">Not connected — you can still type a business name manually below</span>
   </div>
 
-  <div class="business-name-row">
-    <label for="businessNameInput">Business name</label>
-    <input type="text" id="businessNameInput" placeholder="Type the real business name for this demo…" autocomplete="off" />
+  <div class="business-name-box">
+    <label for="businessNameInput">Business name for this call</label>
+    <input type="text" id="businessNameInput" placeholder="Type the real business name here…" autocomplete="off" />
     <span class="hint-inline">The agent will introduce itself using this name on the call</span>
   </div>
 
@@ -469,25 +495,55 @@ function attachAutocomplete(){
   });
 }
 
-connectPlacesBtn.addEventListener('click', async ()=>{
-  const key = placesApiKeyInput.value.trim();
-  if(!key){
-    placesStatus.textContent = 'Paste a Google Places API key first.';
-    return;
-  }
+async function connectWithKey(key, { save } = { save: true }){
   connectPlacesBtn.disabled = true;
   connectPlacesBtn.textContent = 'Connecting…';
   try{
     await loadGooglePlacesScript(key);
     attachAutocomplete();
-    placesStatus.textContent = 'Connected — start typing a business name above to search.';
+    placesStatus.textContent = 'Connected — start typing a business name below to search.';
     connectPlacesBtn.textContent = 'Connected ✓';
+    if(save){
+      try{ await window.storage.set('places_api_key', key, false); }catch(e){ console.error('Could not save API key', e); }
+    }
   } catch(e){
     placesStatus.textContent = e.message;
     connectPlacesBtn.disabled = false;
     connectPlacesBtn.textContent = 'Connect';
   }
+}
+
+connectPlacesBtn.addEventListener('click', ()=>{
+  const key = placesApiKeyInput.value.trim();
+  if(!key){
+    placesStatus.textContent = 'Paste a Google Places API key first.';
+    return;
+  }
+  connectWithKey(key);
 });
+
+el('forgetPlacesBtn').addEventListener('click', async ()=>{
+  try{ await window.storage.delete('places_api_key', false); }catch(e){}
+  placesApiKeyInput.value = '';
+  placesStatus.textContent = 'Saved key removed from this device.';
+  connectPlacesBtn.disabled = false;
+  connectPlacesBtn.textContent = 'Connect';
+});
+
+// On load, check whether a key was saved from a previous visit and
+// reconnect automatically — this is what makes "only enter it once" work.
+(async ()=>{
+  try{
+    const saved = await window.storage.get('places_api_key', false);
+    if(saved && saved.value){
+      placesApiKeyInput.value = saved.value;
+      placesStatus.textContent = 'Found a saved key — reconnecting…';
+      await connectWithKey(saved.value, { save: false });
+    }
+  } catch(e){
+    // No saved key yet — that's normal on first use, nothing to do.
+  }
+})();
 
 businessNameInput.addEventListener('input', ()=>{
   businessNameByVertical[currentVertical] = businessNameInput.value;
