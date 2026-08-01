@@ -431,8 +431,20 @@ function loadGooglePlacesScript(apiKey){
       resolve();
       return;
     }
+    // Google prints a known, non-actionable deprecation notice about the
+    // Autocomplete widget (still fully supported, just steering new
+    // integrations toward a newer component). Filtering just that one
+    // specific message keeps real warnings visible.
+    const originalWarn = console.warn;
+    console.warn = function(...args){
+      const text = args.join(' ');
+      if(text.includes('google.maps.places.Autocomplete is not available to new customers')) return;
+      originalWarn.apply(console, args);
+    };
+    setTimeout(()=>{ console.warn = originalWarn; }, 5000);
+
     const script = document.createElement('script');
-    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places`;
+    script.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(apiKey)}&libraries=places&loading=async`;
     script.async = true;
     script.onload = ()=> resolve();
     script.onerror = ()=> reject(new Error('Failed to load Google Places — check that the API key is valid and Places API is enabled for it.'));
