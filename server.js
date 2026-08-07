@@ -39,6 +39,63 @@ const { createCalendarEvent } = require('./google-calendar');
 const { notifyOwner } = require('./notify');
 
 const app = express();
+
+// ---------------------------------------------------
+// Stripe webhook: fires whenever a real payment completes.
+// This route MUST be registered before the global JSON body parser
+// below — Stripe's signature verification needs the exact raw,
+// unparsed request body, and the global parser would otherwise consume
+// it first for every route, this one included.
+//
+// Emails the notification address (reusing the same email setup as the
+// phone agent's owner notifications) so every paying signup lands in a
+// real inbox, not just Stripe's dashboard. Silently no-ops if Stripe
+// isn't configured yet — nothing else on this server depends on it.
+//
+// SETUP (see SETUP-STRIPE-WEBHOOK.md):
+// 1. Add STRIPE_WEBHOOK_SECRET and STRIPE_SECRET_KEY to Railway's
+//    environment variables.
+// 2. In Stripe Dashboard -> Developers -> Webhooks, add an endpoint
+//    pointing at: https://your-railway-url/webhook/stripe
+//    listening for the "checkout.session.completed" event.
+// ---------------------------------------------------
+app.post('/webhook/stripe', bodyParser.raw({ type: 'application/json' }), async (req, res) => {
+  const webhookSecret = process.env.STRIPE_WEBHOOK_SECRET;
+  if (!webhookSecret) {
+    console.log('[stripe webhook] Received an event but STRIPE_WEBHOOK_SECRET is not set — ignoring.');
+    return res.status(200).send('Webhook not configured.');
+  }
+
+  let event;
+  try {
+    const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY || '');
+    event = stripe.webhooks.constructEvent(req.body, req.headers['stripe-signature'], webhookSecret);
+  } catch (err) {
+    console.error('[stripe webhook] Signature verification failed:', err.message);
+    return res.status(400).send(`Webhook Error: ${err.message}`);
+  }
+
+  if (event.type === 'checkout.session.completed') {
+    const session = event.data.object;
+    const customerEmail = session.customer_details?.email || 'unknown email';
+    const amount = session.amount_total ? (session.amount_total / 100).toFixed(2) : 'unknown amount';
+    console.log(`\n=== NEW PAID SIGNUP ===\n${customerEmail} — $${amount}\n=======================\n`);
+
+    try {
+      await notifyOwner('signup', 'QuickQuote', {
+        name: customerEmail,
+        phone: '',
+        reason: `New paid signup — $${amount}`,
+        time: new Date().toLocaleString()
+      });
+    } catch (e) {
+      console.error('[stripe webhook] Failed to send notification email:', e.message);
+    }
+  }
+
+  res.status(200).send('OK');
+});
+
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
@@ -494,6 +551,56 @@ app.post('/voice/:vertical/respond', async (req, res) => {
 
 app.get('/', (req, res) => {
   res.send('Intake AI phone backend is running. Point a Twilio number at /voice/hvac, /voice/dental, or /voice/electrician.');
+});
+
+// ---------------------------------------------------
+// Claude proxy for QuickQuote (and any other browser-based app on this
+// project). Lets the app call Claude without the end customer ever
+// needing their own Anthropic API key — this server holds the real key
+// and the browser just calls this endpoint instead of api.anthropic.com
+// directly. CORS is open (*) since this is called from a public static
+// site (GitHub Pages) with no login system of its own.
+// ---------------------------------------------------
+app.options('/api/claude', (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.header('Access-Control-Allow-Headers', 'Content-Type');
+  res.sendStatus(200);
+});
+
+app.post('/api/claude', async (req, res) => {
+  res.header('Access-Control-Allow-Origin', '*');
+
+  if (!ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: { message: 'Server is not configured with an Anthropic API key.' } });
+  }
+
+  const { system, messages, max_tokens } = req.body || {};
+  if (!messages) {
+    return res.status(400).json({ error: { message: 'Missing "messages" in request body.' } });
+  }
+
+  try {
+    const anthropicRes = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01'
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-6',
+        max_tokens: max_tokens || 2500,
+        system,
+        messages
+      })
+    });
+    const data = await anthropicRes.json();
+    res.status(anthropicRes.status).json(data);
+  } catch (e) {
+    console.error('[api/claude] Request failed:', e.message);
+    res.status(500).json({ error: { message: 'Proxy request failed.' } });
+  }
 });
 
 app.listen(PORT, () => {
